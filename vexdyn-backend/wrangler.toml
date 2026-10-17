@@ -1,0 +1,30 @@
+# VEXDYN Core Auth Backend
+# Worker name MUST match the existing Cloudflare Worker: vexdyn-backend
+name = "vexdyn-backend"
+main = "src/index.ts"
+compatibility_date = "2025-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Existing D1 database: vexdyn-auth
+[[d1_databases]]
+binding = "DB"
+database_name = "vexdyn-auth"
+database_id = "15ec65a4-0e10-4be2-8000-46684f270fa3"
+migrations_dir = "migrations"
+
+# Secrets (set via `wrangler secret put`, never commit):
+#   BREVO_API_KEY        – Brevo REST API key (NOT the SMTP key)
+#   BREVO_SMTP_KEY       – existing SMTP credential (kept; not used by this Worker)
+#
+# Optional vars:
+#   EMAIL_FROM, APP_BASE_URL, ALLOWED_ORIGINS
+
+[vars]
+EMAIL_FROM = "VEXDYN Support <hellovexdyn@gmail.com>"
+APP_BASE_URL = "https://vexdyn.com"
+# Confirmed origins from the marketing site product links.
+# NYVEN (nyven-v1.pages.dev) is intentionally excluded — separate auth.
+# Lab has no public domain yet.
+ALLOWED_ORIGINS = "https://vexdyn.com,https://www.vexdyn.com,https://vexdyn-forge.pages.dev,https://brand-in-a-box.pages.dev,https://vexdyn-xray.pages.dev,http://localhost:5173,http://localhost:4173,http://127.0.0.1:5173"
+
+# Local development: copy .dev.vars.example → .dev.vars
