@@ -467,3 +467,80 @@ export async function exchangeHandoff(request: Request, env: Env): Promise<Respo
   res.headers.set('set-cookie', sessionCookieHeader(rawToken, expiresAt))
   return res
 }
+
+/** POST /auth/google  { credential }  (ID token from Google Identity Services) */
+export async function googleSignIn(request: Request, env: Env): Promise<Response> {
+  if (!env.GOOGLE_CLIENT_ID) return err('Google sign-in is not set up yet.', 503, 'google_unavailable')
+
+  const ip = clientIp(request)
+  const rl = await checkRateLimit(env.DB, 'google', ip, 30, 900)
+  if (!rl.allowed) return err('Too many attempts. Try again later.', 429, 'rate_limited')
+
+  const body = await readJson(request)
+  if (!body) return err('Invalid request body.')
+  const credential = str(body.credential)
+  if (!credential || credential.length > 4096) return err('Google sign-in failed.', 401, 'google_invalid')
+
+  // Google checks the signature and expiry; we check audience, issuer and verified email.
+  let info: Record<string, unknown> | null = null
+  try {
+    const r = await fetch(
+      'https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(credential)
+    )
+    if (r.ok) info = (await r.json()) as Record<string, unknown>
+  } catch {
+    info = null
+  }
+  if (!info) return err('Google sign-in failed.', 401, 'google_invalid')
+
+  const issOk = info.iss === 'accounts.google.com' || info.iss === 'https://accounts.google.com'
+  const expOk = Number(info.exp) * 1000 > Date.now()
+  const verified = info.email_verified === 'true' || info.email_verified === true
+  const email = normalizeEmail(str(info.email))
+  if (info.aud !== env.GOOGLE_CLIENT_ID || !issOk || !expOk || !verified || !isValidEmail(email)) {
+    return err('Google sign-in failed.', 401, 'google_invalid')
+  }
+
+  const name = str(info.name).trim().slice(0, 80) || null
+  let user = await findUserByEmail(env.DB, email)
+
+  if (!user) {
+    // New account created through Google: random password nobody knows, email already verified.
+    const unusable = await hashPassword(generateUrlToken(24) + 'Aa1')
+    try {
+      user = await createUser(env.DB, email, unusable, name)
+    } catch (e) {
+      if (e instanceof UniqueConstraintError) user = await findUserByEmail(env.DB, email)
+      else throw e
+    }
+    if (!user) return err('Google sign-in failed.', 500, 'internal')
+    await markEmailVerified(env.DB, user.id)
+  } else if (user.email_verified !== 1) {
+    // Account was registered but never verified. Google now proves ownership of the email,
+    // so replace the password: whoever pre-registered it must not keep access.
+    await updatePassword(env.DB, user.id, await hashPassword(generateUrlToken(24) + 'Aa1'))
+    await markEmailVerified(env.DB, user.id)
+  }
+
+  const fresh = await findUserById(env.DB, user.id)
+  if (!fresh) return err('Google sign-in failed.', 500, 'internal')
+
+  const rawToken = generateSessionToken()
+  const { expiresAt } = await createSession(
+    env.DB,
+    fresh.id,
+    rawToken,
+    ip,
+    request.headers.get('user-agent')
+  )
+  const memberships = await listMemberships(env.DB, fresh.id)
+
+  const res = ok({
+    user: toPublicUser(fresh),
+    sessionToken: rawToken,
+    expiresAt,
+    memberships,
+  })
+  res.headers.set('set-cookie', sessionCookieHeader(rawToken, expiresAt))
+  return res
+}

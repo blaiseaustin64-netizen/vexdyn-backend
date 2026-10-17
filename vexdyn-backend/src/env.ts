@@ -18,6 +18,9 @@ export type Env = {
   /** Base URL for links in emails, e.g. https://vexdyn.com */
   APP_BASE_URL: string
 
+  /** Google OAuth Web client ID (public). Leave empty to hide the Google button. */
+  GOOGLE_CLIENT_ID?: string
+
   /** Comma-separated CORS allowlist (confirmed VEXDYN product origins only). */
   ALLOWED_ORIGINS: string
 }

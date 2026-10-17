@@ -1,5 +1,13 @@
 # VEXDYN Auth Backend (`vexdyn-backend`)
 
+> ## Read this first (the "Network error" fix)
+> 1. Open `wrangler.toml` and replace `https://REPLACE-WITH-YOUR-MAIN-SITE.pages.dev` in **both** lines (`APP_BASE_URL` and the start of `ALLOWED_ORIGINS`) with the address of your main website.
+> 2. Run `npm run deploy`.
+> 3. Open the Worker address and check that `appBaseUrl` and `allowedOrigins` show your website. If your website address is not in `allowedOrigins`, the browser blocks sign up and shows "Network error".
+>
+> Password hashing is set to 100,000 rounds because Cloudflare Workers does not allow more. Do not raise it.
+
+
 Cloudflare Worker + D1 authentication for the VEXDYN product suite  
 (Forge, Brand-in-a-Box, X-Ray, Lab — **not** NYVEN).
 
@@ -282,4 +290,19 @@ Emails: branded HTML + text via Brevo HTTPS API (`BREVO_API_KEY` only).
 ## License / ownership
 
 Private VEXDYN backend. Not for redistribution with secrets.
-VEXDYN backend deployment verification
+
+
+---
+
+## Continue with Google (added)
+
+The backend now has `POST /auth/google`. The website shows a "Continue with Google" button only when `GOOGLE_CLIENT_ID` is set.
+
+1. Go to https://console.cloud.google.com/ and open (or create) a project.
+2. APIs & Services → OAuth consent screen: fill in the app name (VEXDYN) and your support email, then publish it.
+3. APIs & Services → Credentials → Create credentials → OAuth client ID → **Web application**.
+4. Under **Authorized JavaScript origins** add `https://vexdyn.pages.dev` (add `http://localhost:5173` for local testing). No redirect URI is needed.
+5. Copy the Client ID (ends in `.apps.googleusercontent.com`) into `GOOGLE_CLIENT_ID = ""` in `wrangler.toml`.
+6. Run `npm run deploy`. Open the Worker address: `googleClientId` should now show your ID.
+
+People who sign in with Google get a verified account straight away (no email code needed).

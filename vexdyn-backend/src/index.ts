@@ -13,6 +13,7 @@ import type { Env } from './env'
 import { handleOptions, withCors } from './middleware/cors'
 import { ok, err } from './lib/response'
 import * as auth from './routes/auth'
+import { parseAllowedOrigins } from './middleware/cors'
 
 export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
@@ -41,6 +42,10 @@ async function route(request: Request, env: Env): Promise<Response> {
       status: 'ok',
       time: new Date().toISOString(),
       auth: true,
+      // Public config so you can check your settings are live (no secrets here)
+      appBaseUrl: env.APP_BASE_URL,
+      allowedOrigins: parseAllowedOrigins(env),
+      googleClientId: env.GOOGLE_CLIENT_ID || null,
     })
   }
 
@@ -49,6 +54,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (path === '/auth/resend-verification' && method === 'POST')
     return auth.resendVerification(request, env)
   if (path === '/auth/login' && method === 'POST') return auth.login(request, env)
+  if (path === '/auth/google' && method === 'POST') return auth.googleSignIn(request, env)
   if (path === '/auth/logout' && method === 'POST') return auth.logout(request, env)
   if (path === '/auth/me' && method === 'GET') return auth.me(request, env)
   if (path === '/auth/forgot-password' && method === 'POST')

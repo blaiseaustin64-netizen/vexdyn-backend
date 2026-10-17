@@ -1,0 +1,14 @@
+# Copy to .dev.vars for local `wrangler dev`
+# Never commit .dev.vars
+
+# Required: Brevo REST API key (NOT the SMTP key)
+# Create at Brevo → SMTP & API → API Keys → Generate a new API key
+BREVO_API_KEY=xkeysib-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# Optional override (defaults come from wrangler.toml [vars])
+# EMAIL_FROM=VEXDYN Support <hellovexdyn@gmail.com>
+# APP_BASE_URL=http://localhost:5173
+# ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+
+# Optional: Google OAuth Web client ID (public)
+# GOOGLE_CLIENT_ID=1234567890-abc.apps.googleusercontent.com

@@ -3,7 +3,10 @@
  * Uses Web Crypto API only — fully compatible with Cloudflare Workers.
  */
 
-const PBKDF2_ITERATIONS = 210_000
+// Cloudflare Workers allows at most 100,000 PBKDF2 iterations in crypto.subtle.
+// A higher number works in local tests but fails with a 500 error on the real Worker.
+const PBKDF2_ITERATIONS = 100_000
+const PBKDF2_MAX_ITERATIONS = 100_000
 const PBKDF2_HASH = 'SHA-256'
 const SALT_BYTES = 16
 const KEY_BYTES = 32
@@ -43,7 +46,7 @@ export async function verifyPassword(password: string, envelope: string): Promis
     return false
   }
   const iterations = parseInt(parts[2], 10)
-  if (!Number.isFinite(iterations) || iterations < 10_000) return false
+  if (!Number.isFinite(iterations) || iterations < 10_000 || iterations > PBKDF2_MAX_ITERATIONS) return false
   const salt = hexToBytes(parts[3])
   const expected = hexToBytes(parts[4])
   if (salt.length === 0 || expected.length === 0) return false

@@ -21,10 +21,14 @@ migrations_dir = "migrations"
 
 [vars]
 EMAIL_FROM = "VEXDYN Support <hellovexdyn@gmail.com>"
-APP_BASE_URL = "https://vexdyn.com"
+# Google OAuth Web client ID (public, not a secret). Empty = the Google button stays hidden.
+GOOGLE_CLIENT_ID = ""
+# >>> EDIT THESE TWO LINES: put your MAIN WEBSITE address (the one people open), no slash at the end.
+# Until you buy a domain, use your Cloudflare Pages address, e.g. https://vexdyn.pages.dev
+APP_BASE_URL = "https://vexdyn.pages.dev"
 # Confirmed origins from the marketing site product links.
 # NYVEN (nyven-v1.pages.dev) is intentionally excluded — separate auth.
 # Lab has no public domain yet.
-ALLOWED_ORIGINS = "https://vexdyn.com,https://www.vexdyn.com,https://vexdyn-forge.pages.dev,https://brand-in-a-box.pages.dev,https://vexdyn-xray.pages.dev,http://localhost:5173,http://localhost:4173,http://127.0.0.1:5173"
+ALLOWED_ORIGINS = "https://vexdyn.pages.dev,https://vexdyn.com,https://www.vexdyn.com,https://vexdyn-forge.pages.dev,https://brand-in-a-box.pages.dev,https://vexdyn-xray.pages.dev,http://localhost:5173,http://localhost:4173,http://127.0.0.1:5173"
 
 # Local development: copy .dev.vars.example → .dev.vars
