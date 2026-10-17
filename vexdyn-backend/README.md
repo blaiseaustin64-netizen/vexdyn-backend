@@ -282,3 +282,4 @@ Emails: branded HTML + text via Brevo HTTPS API (`BREVO_API_KEY` only).
 ## License / ownership
 
 Private VEXDYN backend. Not for redistribution with secrets.
+VEXDYN backend deployment verification
