@@ -29,13 +29,15 @@ import { ok, err, SAFE } from '../lib/response'
 import {
   generateSessionToken,
   generateUrlToken,
+  generateVerificationCode,
   extractSessionToken,
   sessionCookieHeader,
   clearSessionCookieHeader,
 } from '../lib/session-token'
 import { sendVerificationEmail, sendPasswordResetEmail } from '../email/brevo'
 
-const VERIFY_TTL_MIN = 30
+const VERIFY_TTL_MIN = 5
+const VERIFY_TTL_SEC = VERIFY_TTL_MIN * 60
 const RESET_TTL_MIN = 30
 const PRODUCTS = new Set(['forge', 'brand', 'xray', 'lab', 'main'])
 
@@ -78,7 +80,7 @@ export async function register(request: Request, env: Env): Promise<Response> {
   const existing = await findUserByEmail(env.DB, email)
   if (existing) {
     // Uniform response — do not reveal whether the account already exists
-    return ok({ message: SAFE.verificationSent }, 201)
+    return ok({ message: SAFE.verificationSent, expiresInSeconds: VERIFY_TTL_SEC }, 201)
   }
 
   const passwordHash = await hashPassword(password)
@@ -88,76 +90,50 @@ export async function register(request: Request, env: Env): Promise<Response> {
   } catch (e) {
     if (e instanceof UniqueConstraintError) {
       // Concurrent register won the race — same safe response as "already exists"
-      return ok({ message: SAFE.verificationSent }, 201)
+      return ok({ message: SAFE.verificationSent, expiresInSeconds: VERIFY_TTL_SEC }, 201)
     }
     throw e
   }
 
-  const token = generateUrlToken(32)
-  try {
-    await createAuthToken(env.DB, user.id, 'email_verify', token, VERIFY_TTL_MIN)
-  } catch (e) {
-    if (e instanceof UniqueConstraintError) {
-      // Retry once with a fresh token
-      const token2 = generateUrlToken(32)
-      await createAuthToken(env.DB, user.id, 'email_verify', token2, VERIFY_TTL_MIN)
-      const verifyUrl = `${env.APP_BASE_URL.replace(/\/$/, '')}/verify-email?token=${encodeURIComponent(token2)}&email=${encodeURIComponent(email)}`
-      const sent = await sendVerificationEmail(
-        env,
-        { email, name: displayName },
-        token2,
-        verifyUrl,
-        VERIFY_TTL_MIN
-      )
-      if (!sent.ok) console.error('Verification email failed for new user', user.id)
-      return ok({ message: SAFE.verificationSent }, 201)
-    }
-    throw e
-  }
-
-  const verifyUrl = `${env.APP_BASE_URL.replace(/\/$/, '')}/verify-email?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`
-  const sent = await sendVerificationEmail(
-    env,
-    { email, name: displayName },
-    token,
-    verifyUrl,
-    VERIFY_TTL_MIN
-  )
+  const code = generateVerificationCode()
+  await createAuthToken(env.DB, user.id, 'email_verify', code, VERIFY_TTL_MIN)
+  const sent = await sendVerificationEmail(env, { email, name: displayName }, code, VERIFY_TTL_MIN)
   if (!sent.ok) {
     console.error('Verification email failed for new user', user.id)
   }
 
-  return ok({ message: SAFE.verificationSent }, 201)
+  return ok({ message: SAFE.verificationSent, expiresInSeconds: VERIFY_TTL_SEC }, 201)
 }
 
 /** POST /auth/verify-email  { email, token } */
 export async function verifyEmail(request: Request, env: Env): Promise<Response> {
   const ip = clientIp(request)
-  const rl = await checkRateLimit(env.DB, 'verify', ip, 20, 3600)
+  const rl = await checkRateLimit(env.DB, 'verify', ip, 40, 3600)
   if (!rl.allowed) return err('Too many attempts. Try again later.', 429, 'rate_limited')
 
   const body = await readJson(request)
   if (!body) return err('Invalid request body.')
 
   const email = normalizeEmail(str(body.email))
-  // Accept `token` (preferred) or legacy `code` field name for one release
-  const token = (str(body.token) || str(body.code)).trim()
-  if (!isValidEmail(email) || token.length < 32) {
-    return err('Invalid or expired verification link.')
+  // 6-digit code from the email (older long tokens from earlier emails are still accepted)
+  const token = (str(body.code) || str(body.token)).trim()
+  if (!isValidEmail(email) || !(/^\d{6}$/.test(token) || token.length >= 32)) {
+    return err('Enter the 6-digit code from your email.')
   }
 
-  const emailRl = await checkRateLimit(env.DB, 'verify_email', email, 10, 3600)
+  // Only a few guesses per email: keeps a 6-digit code safe from brute force
+  const emailRl = await checkRateLimit(env.DB, 'verify_email', email, 8, 900)
   if (!emailRl.allowed) return err('Too many attempts. Try again later.', 429, 'rate_limited')
 
   const user = await findUserByEmail(env.DB, email)
-  if (!user) return err('Invalid or expired verification link.')
+  if (!user) return err('That code is wrong or has expired. Check it or ask for a new one.')
   if (user.email_verified === 1) {
-    return err('Invalid or expired verification link.')
+    return err('That code is wrong or has expired. Check it or ask for a new one.')
   }
 
   const consumed = await consumeAuthToken(env.DB, 'email_verify', token, user.id)
   if (!consumed || consumed.userId !== user.id) {
-    return err('Invalid or expired verification link.')
+    return err('That code is wrong or has expired. Check it or ask for a new one.')
   }
 
   await markEmailVerified(env.DB, user.id)
@@ -187,7 +163,7 @@ export async function verifyEmail(request: Request, env: Env): Promise<Response>
 /** POST /auth/resend-verification  { email } */
 export async function resendVerification(request: Request, env: Env): Promise<Response> {
   const ip = clientIp(request)
-  const rl = await checkRateLimit(env.DB, 'resend', ip, 5, 3600)
+  const rl = await checkRateLimit(env.DB, 'resend', ip, 12, 3600)
   if (!rl.allowed) return err('Too many attempts. Try again later.', 429, 'rate_limited')
 
   const body = await readJson(request)
@@ -198,18 +174,17 @@ export async function resendVerification(request: Request, env: Env): Promise<Re
   const user = await findUserByEmail(env.DB, email)
   // Always same message
   if (!user || user.email_verified === 1) {
-    return ok({ message: SAFE.verificationSent })
+    return ok({ message: SAFE.verificationSent, expiresInSeconds: VERIFY_TTL_SEC })
   }
 
-  const emailRl = await checkRateLimit(env.DB, 'resend_email', email, 3, 3600)
-  if (!emailRl.allowed) return ok({ message: SAFE.verificationSent })
+  const emailRl = await checkRateLimit(env.DB, 'resend_email', email, 6, 3600)
+  if (!emailRl.allowed) return ok({ message: SAFE.verificationSent, expiresInSeconds: VERIFY_TTL_SEC })
 
-  const token = generateUrlToken(32)
-  await createAuthToken(env.DB, user.id, 'email_verify', token, VERIFY_TTL_MIN)
-  const verifyUrl = `${env.APP_BASE_URL.replace(/\/$/, '')}/verify-email?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`
-  await sendVerificationEmail(env, { email, name: user.display_name }, token, verifyUrl, VERIFY_TTL_MIN)
+  const code = generateVerificationCode()
+  await createAuthToken(env.DB, user.id, 'email_verify', code, VERIFY_TTL_MIN)
+  await sendVerificationEmail(env, { email, name: user.display_name }, code, VERIFY_TTL_MIN)
 
-  return ok({ message: SAFE.verificationSent })
+  return ok({ message: SAFE.verificationSent, expiresInSeconds: VERIFY_TTL_SEC })
 }
 
 /** POST /auth/login  { email, password } */

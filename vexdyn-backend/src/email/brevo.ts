@@ -65,20 +65,18 @@ function parseFrom(from: string): { name: string; email: string } {
 }
 
 function assetBase(env: Env): string {
-  return (env.APP_BASE_URL || 'https://vexdyn.com').replace(/\/$/, '')
+  return (env.APP_BASE_URL || 'https://vexdyn.pages.dev').replace(/\/$/, '')
 }
 
 export async function sendVerificationEmail(
   env: Env,
   to: { email: string; name?: string | null },
-  token: string,
-  verifyUrl: string,
+  code: string,
   expiresMinutes: number
 ): Promise<SendResult> {
   const content = verificationEmail({
     displayName: to.name,
-    token,
-    verifyUrl,
+    code,
     expiresMinutes,
     assetBaseUrl: assetBase(env),
   })

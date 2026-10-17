@@ -18,7 +18,7 @@ import * as auth from '../src/routes/auth'
 import { checkRateLimit, clientIp } from '../src/lib/rate-limit'
 import { UniqueConstraintError, createUser, createAuthToken, consumeAuthToken } from '../src/lib/db'
 import { hashPassword, sha256Hex } from '../src/lib/crypto'
-import { generateUrlToken } from '../src/lib/session-token'
+import { generateUrlToken, generateVerificationCode } from '../src/lib/session-token'
 
 function makeEnv(db: MockD1): Env {
   return {
@@ -152,7 +152,7 @@ describe('email verification tokens', () => {
     issued.length = 0
   })
 
-  it('uses high-entropy tokens, not 6-digit codes', async () => {
+  it('database layer still works with long high-entropy tokens', async () => {
     const db = new MockD1()
     const env = makeEnv(db)
     // Intercept token by wrapping createAuthToken path: register generates token internally.
@@ -167,6 +167,27 @@ describe('email verification tokens', () => {
     expect(ok?.userId).toBe(user.id)
     const reuse = await consumeAuthToken(asD1(db), 'email_verify', token, user.id)
     expect(reuse).toBeNull()
+  })
+
+  it('verify-email accepts a 6-digit code and rejects a wrong one', async () => {
+    const db = new MockD1()
+    const env = makeEnv(db)
+    const hash = await hashPassword('Password1')
+    const user = await createUser(asD1(db), 'code@example.com', hash, null)
+    const code = generateVerificationCode()
+    expect(code).toMatch(/^\d{6}$/)
+    await createAuthToken(asD1(db), user.id, 'email_verify', code, 5)
+
+    const wrong = await auth.verifyEmail(
+      jsonReq({ email: 'code@example.com', code: code === '000000' ? '111111' : '000000' }),
+      env
+    )
+    expect(wrong.status).toBe(400)
+
+    const good = await auth.verifyEmail(jsonReq({ email: 'code@example.com', code }), env)
+    expect(good.status).toBe(200)
+    const body = await bodyOf(good)
+    expect(body.sessionToken).toBeTypeOf('string')
   })
 
   it('verify-email requires email + long token and issues session', async () => {

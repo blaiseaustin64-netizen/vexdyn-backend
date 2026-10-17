@@ -59,3 +59,15 @@ export function clearSessionCookieHeader(secure = true): string {
 export function generateUrlToken(bytes = 32): string {
   return randomHex(bytes)
 }
+
+/** Uniform random 6-digit code (000000-999999), no modulo bias. */
+export function generateVerificationCode(): string {
+  const buf = new Uint32Array(1)
+  const limit = Math.floor(0x100000000 / 1_000_000) * 1_000_000
+  let n = 0
+  do {
+    crypto.getRandomValues(buf)
+    n = buf[0]!
+  } while (n >= limit)
+  return String(n % 1_000_000).padStart(6, '0')
+}

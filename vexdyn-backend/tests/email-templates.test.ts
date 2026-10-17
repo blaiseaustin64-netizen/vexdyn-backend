@@ -14,70 +14,53 @@ describe('DEFAULT_EMAIL_FROM', () => {
 })
 
 describe('verificationEmail', () => {
-  const verifyUrl =
-    'https://vexdyn.com/verify-email?token=abc123tokenvaluewithenoughlength&email=user%40example.com'
-
-  it('uses required subject and expiry copy', () => {
+  it('shows the 6-digit code, puts it in the subject and says 5 minutes', () => {
     const m = verificationEmail({
       displayName: 'Ada',
-      token: 'secret-token-never-in-subject',
-      verifyUrl,
-      expiresMinutes: 30,
+      code: '482913',
+      expiresMinutes: 5,
       assetBaseUrl: ASSET,
     })
-    expect(m.subject).toBe('Verify your VEXDYN account')
-    expect(m.html).toContain('30 minutes')
-    expect(m.text).toContain('30 minutes')
-    expect(m.html).toContain('Verify email address')
-    expect(m.html).toContain(verifyUrl)
-    expect(m.text).toContain(verifyUrl)
+    expect(m.subject).toBe('482913 is your VEXDYN verification code')
+    expect(m.html).toContain('482913')
+    expect(m.text).toContain('482913')
+    expect(m.html).toContain('5 minutes')
+    expect(m.text).toContain('5 minutes')
+    expect(m.html).not.toContain('30 minutes')
   })
 
-  it('embeds real brand asset URLs from APP_BASE_URL origin', () => {
-    const m = verificationEmail({
-      token: 't',
-      verifyUrl,
-      expiresMinutes: 30,
-      assetBaseUrl: ASSET,
-    })
+  it('has no verification link or button', () => {
+    const m = verificationEmail({ code: '000123', expiresMinutes: 5, assetBaseUrl: ASSET })
+    expect(m.html).not.toContain('verify-email?token')
+    expect(m.html).not.toContain('Verify email address')
+    expect(m.text).not.toContain('http')
+  })
+
+  it('embeds the brand symbol from the site origin and a text wordmark', () => {
+    const m = verificationEmail({ code: '123456', expiresMinutes: 5, assetBaseUrl: ASSET })
     expect(m.html).toContain('https://vexdyn.com/assets/brand/vexdyn-symbol.png')
-    expect(m.html).toContain('https://vexdyn.com/assets/brand/vexdyn-wordmark.png')
     expect(m.html).toContain('alt="VEXDYN"')
+    expect(m.html).toContain('>VEXDYN</div>')
   })
 
   it('escapes user-controlled display names', () => {
     const m = verificationEmail({
       displayName: '<script>alert(1)</script>',
-      token: 't',
-      verifyUrl,
-      expiresMinutes: 30,
+      code: '123456',
+      expiresMinutes: 5,
       assetBaseUrl: ASSET,
     })
     expect(m.html).not.toContain('<script>')
     expect(m.html).toContain('&lt;script&gt;')
   })
 
-  it('does not place raw token outside the verify URL', () => {
-    const token = 'raw_token_should_not_appear_alone_xyz'
-    const url = `https://vexdyn.com/verify-email?token=${token}&email=a%40b.co`
-    const m = verificationEmail({
-      token,
-      verifyUrl: url,
-      expiresMinutes: 30,
-      assetBaseUrl: ASSET,
-    })
-    // Token may appear only as part of the URL
-    const withoutUrls = m.html.split(url).join('')
-    expect(withoutUrls).not.toContain(token)
+  it('only ever renders digits as the code', () => {
+    const m = verificationEmail({ code: '12<b>3456', expiresMinutes: 5, assetBaseUrl: ASSET })
+    expect(m.html).not.toContain('<b>3456')
   })
 
   it('includes ignore guidance', () => {
-    const m = verificationEmail({
-      token: 't',
-      verifyUrl,
-      expiresMinutes: 30,
-      assetBaseUrl: ASSET,
-    })
+    const m = verificationEmail({ code: '123456', expiresMinutes: 5, assetBaseUrl: ASSET })
     expect(m.html.toLowerCase()).toMatch(/did not create/)
     expect(m.text.toLowerCase()).toMatch(/did not create/)
   })
